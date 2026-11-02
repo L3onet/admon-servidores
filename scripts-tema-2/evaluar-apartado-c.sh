@@ -7,10 +7,15 @@
 # Uso:
 # sudo bash evaluar_apartado_c.sh IP_SERVIDOR IP_CLIENTE
 #
-# Requisitos:
-# - Samba y smbclient instalados.
-# - SSH por llave hacia el cliente.
-# - Archivos de credenciales Samba.
+# Todas las pruebas se ejecutan en el propio servidor
+# (smbclient contra IP_SERVIDOR); no hace falta SSH ni
+# un cliente Linux. IP_CLIENTE solo se valida.
+#
+# Contraseñas Samba de profe1 y alumno1, en este orden:
+#   1) archivo /root/.samba-profe1 y /root/.samba-alumno1
+#      (formato: username = profe1 / password = CLAVE);
+#   2) variables SMB_PASS_PROFE1 y SMB_PASS_ALUMNO1;
+#   3) se piden por teclado (sin mostrarlas).
 # ==================================================
 
 if [ "$#" -ne 2 ]; then
@@ -26,20 +31,39 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# Usuario SSH del cliente. Se puede modificar
-# mediante la variable SSH_CLIENT_USER.
-SSH_CLIENT_USER="${SSH_CLIENT_USER:-${SUDO_USER:-root}}"
+# Credenciales Samba temporales (se borran al terminar).
+TMP_CRED=$(mktemp -d /tmp/eval-samba.XXXXXX) || exit 1
+chmod 700 "$TMP_CRED"
+trap 'rm -rf "$TMP_CRED"' EXIT
 
-# Archivos de credenciales Samba.
-# Formato:
-# username = profe1
-# password = CONTRASENA
-CRED_PROFE="/root/.samba-profe1"
-CRED_ALUMNO="/root/.samba-alumno1"
+CRED_PROFE=""
+CRED_ALUMNO=""
 
-# Los mismos archivos deben existir en el cliente.
-CRED_CLIENTE_PROFE="/root/.samba-profe1"
-CRED_CLIENTE_ALUMNO="/root/.samba-alumno1"
+# Prepara un archivo de credenciales para $1 y deja su ruta en $2.
+preparar_credenciales() {
+    local usuario="$1"
+    local destino="$2"
+    local archivo="/root/.samba-$usuario"
+    local variable="SMB_PASS_${usuario^^}"
+    local clave="${!variable:-}"
+    local temporal="$TMP_CRED/$usuario"
+
+    if [ -r "$archivo" ]; then
+        printf -v "$destino" '%s' "$archivo"
+        return 0
+    fi
+
+    if [ -z "$clave" ] && [ -t 0 ]; then
+        read -rs -p "Contraseña Samba de $usuario: " clave
+        echo
+    fi
+
+    [ -n "$clave" ] || return 1
+
+    printf 'username = %s\npassword = %s\n' "$usuario" "$clave" > "$temporal"
+    chmod 600 "$temporal"
+    printf -v "$destino" '%s' "$temporal"
+}
 
 declare -A ESTADO
 declare -A PUNTOS
@@ -91,6 +115,9 @@ if ! validar_ip "$IP_SERVIDOR" ||
     echo "Error: dirección IPv4 inválida."
     exit 1
 fi
+
+preparar_credenciales profe1 CRED_PROFE || CRED_PROFE=""
+preparar_credenciales alumno1 CRED_ALUMNO || CRED_ALUMNO=""
 
 # ==================================================
 # C1. INSTALACIÓN Y CONFIGURACIÓN DE SAMBA
@@ -163,8 +190,8 @@ fi
 
 if ! existe_comando smbclient; then
     fallar C3 "smbclient no está instalado."
-elif [ ! -f "$CRED_PROFE" ]; then
-    fallar C3 "Falta el archivo de credenciales de profe1."
+elif [ -z "$CRED_PROFE" ]; then
+    fallar C3 "No se obtuvo la contraseña Samba de profe1."
 else
     LISTADO=$(smbclient -L //localhost \
         -A "$CRED_PROFE" -m SMB3 2>&1)
@@ -244,97 +271,39 @@ if ! ss -tlnp |
 fi
 
 # ==================================================
-# PRUEBAS DESDE EL CLIENTE
-# C6 Y C7
-# ==================================================
-
-# Se requiere SSH por llave, sin contraseña interactiva.
-SSH_OPTS=(
-    -o BatchMode=yes
-    -o ConnectTimeout=5
-    -o StrictHostKeyChecking=yes
-)
-
-CLIENTE_DISPONIBLE=1
-
-if ! ssh "${SSH_OPTS[@]}" \
-    "${SSH_CLIENT_USER}@${IP_CLIENTE}" \
-    'command -v smbclient >/dev/null' \
-    >/dev/null 2>&1; then
-
-    CLIENTE_DISPONIBLE=0
-
-    fallar C6 "No se pudo acceder al cliente por SSH o falta smbclient."
-    fallar C7 "No se pudo ejecutar la prueba desde el cliente."
-fi
-
-# Comprobación de credenciales en el cliente.
-if [ "$CLIENTE_DISPONIBLE" -eq 1 ]; then
-
-    if ! ssh "${SSH_OPTS[@]}" \
-         "${SSH_CLIENT_USER}@${IP_CLIENTE}" \
-         "sudo -n test -r '$CRED_CLIENTE_PROFE' &&
-          sudo -n test -r '$CRED_CLIENTE_ALUMNO'" \
-         >/dev/null 2>&1; then
-
-        CLIENTE_DISPONIBLE=0
-
-        fallar C6 "Faltan credenciales Samba en el cliente o sudo sin contraseña."
-        fallar C7 "No se pueden consultar credenciales en el cliente."
-    fi
-fi
-
-# ==================================================
 # C6. ACCESO AUTORIZADO
 # 3 PUNTOS
+#
+# profe1 lista "publico" y alumno1 sube un archivo
+# a "entregas" (se borra al terminar).
 # ==================================================
 
-if [ "$CLIENTE_DISPONIBLE" -eq 1 ]; then
-
-    SALIDA_C6=$(ssh "${SSH_OPTS[@]}" \
-        "${SSH_CLIENT_USER}@${IP_CLIENTE}" \
-        "sudo -n bash -s -- '$IP_SERVIDOR' '$CRED_CLIENTE_PROFE' '$CRED_CLIENTE_ALUMNO'" \
-        <<'REMOTO_C6'
-IP="$1"
-CRED_PROFE="$2"
-CRED_ALUMNO="$3"
-
-FALLOS=0
-
-if ! smbclient "//$IP/publico" \
-     -A "$CRED_PROFE" -c 'ls' \
-     >/dev/null 2>&1; then
-    echo "No se puede listar publico como profe1."
-    FALLOS=1
-fi
-
-ARCHIVO=$(mktemp /tmp/prueba_samba.XXXXXX) || exit 1
-NOMBRE=$(basename "$ARCHIVO")
-
-printf 'Prueba Samba\n' > "$ARCHIVO"
-
-SALIDA=$(smbclient "//$IP/entregas" \
-    -A "$CRED_ALUMNO" \
-    -c "put $ARCHIVO $NOMBRE" 2>&1)
-
-if [ "$?" -ne 0 ]; then
-    echo "No se puede subir a entregas como alumno1."
-    echo "$SALIDA"
-    FALLOS=1
+if ! existe_comando smbclient; then
+    fallar C6 "smbclient no está instalado."
+elif [ -z "$CRED_PROFE" ] || [ -z "$CRED_ALUMNO" ]; then
+    fallar C6 "Faltan las contraseñas Samba de profe1 o alumno1."
 else
-    # Limpiar el archivo de prueba del recurso.
-    smbclient "//$IP/entregas" \
-        -A "$CRED_ALUMNO" \
-        -c "del $NOMBRE" >/dev/null 2>&1
-fi
 
-rm -f "$ARCHIVO"
-exit "$FALLOS"
-REMOTO_C6
-    )
+    if ! smbclient "//$IP_SERVIDOR/publico" \
+         -A "$CRED_PROFE" -m SMB3 -c 'ls' \
+         >/dev/null 2>&1; then
+        fallar C6 "profe1 no puede listar el recurso publico."
+    fi
+
+    ARCHIVO_PRUEBA="$TMP_CRED/prueba_samba.txt"
+    NOMBRE_PRUEBA="prueba_eval_$$.txt"
+    printf 'Prueba Samba\n' > "$ARCHIVO_PRUEBA"
+
+    SALIDA=$(smbclient "//$IP_SERVIDOR/entregas" \
+        -A "$CRED_ALUMNO" -m SMB3 \
+        -c "put $ARCHIVO_PRUEBA $NOMBRE_PRUEBA" 2>&1)
 
     if [ "$?" -ne 0 ]; then
-        fallar C6 "Falló una prueba autorizada: $SALIDA_C6"
+        fallar C6 "alumno1 no puede subir a entregas: $SALIDA"
+    else
+        smbclient "//$IP_SERVIDOR/entregas" \
+            -A "$CRED_ALUMNO" -m SMB3 \
+            -c "del $NOMBRE_PRUEBA" >/dev/null 2>&1
     fi
 fi
 
@@ -343,48 +312,27 @@ fi
 # 3 PUNTOS
 # ==================================================
 
-if [ "$CLIENTE_DISPONIBLE" -eq 1 ]; then
+if ! existe_comando smbclient; then
+    fallar C7 "smbclient no está instalado."
+elif [ -z "$CRED_ALUMNO" ]; then
+    fallar C7 "Falta la contraseña Samba de alumno1."
+else
 
-    SALIDA_C7=$(ssh "${SSH_OPTS[@]}" \
-        "${SSH_CLIENT_USER}@${IP_CLIENTE}" \
-        "sudo -n bash -s -- '$IP_SERVIDOR' '$CRED_CLIENTE_ALUMNO'" \
-        <<'REMOTO_C7'
-IP="$1"
-CRED="$2"
+    # Las credenciales deben ser válidas en un recurso permitido.
+    if ! smbclient "//$IP_SERVIDOR/publico" \
+         -A "$CRED_ALUMNO" -m SMB3 -c 'ls' \
+         >/dev/null 2>&1; then
+        fallar C7 "alumno1 no se pudo autenticar en publico."
+    else
+        SALIDA=$(smbclient "//$IP_SERVIDOR/docentes" \
+            -A "$CRED_ALUMNO" -m SMB3 -c 'ls' 2>&1)
 
-# Primero comprobar que las credenciales de
-# alumno1 son válidas en un recurso permitido.
-if ! smbclient "//$IP/publico" \
-     -A "$CRED" -c 'ls' \
-     >/dev/null 2>&1; then
-    echo "No se pudo autenticar alumno1 en publico."
-    exit 2
-fi
-
-# Intentar acceso al recurso restringido.
-SALIDA=$(smbclient "//$IP/docentes" \
-    -A "$CRED" -c 'ls' 2>&1)
-
-CODIGO=$?
-
-if [ "$CODIGO" -eq 0 ]; then
-    echo "alumno1 pudo listar el recurso docentes."
-    exit 1
-fi
-
-if printf '%s\n' "$SALIDA" |
-   grep -q 'NT_STATUS_ACCESS_DENIED'; then
-    exit 0
-fi
-
-echo "La conexión falló por un motivo no confirmado:"
-echo "$SALIDA"
-exit 3
-REMOTO_C7
-    )
-
-    if [ "$?" -ne 0 ]; then
-        fallar C7 "No se comprobó una denegación válida: $SALIDA_C7"
+        if [ "$?" -eq 0 ]; then
+            fallar C7 "alumno1 pudo listar el recurso docentes."
+        elif ! printf '%s\n' "$SALIDA" |
+             grep -q 'NT_STATUS_ACCESS_DENIED'; then
+            fallar C7 "El acceso falló por un motivo no confirmado: $SALIDA"
+        fi
     fi
 fi
 

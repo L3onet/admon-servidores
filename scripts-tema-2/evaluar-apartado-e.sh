@@ -9,6 +9,13 @@
 #
 # Evaluación local en Ubuntu Server.
 # No requiere ejecutar comandos en Windows.
+#
+# Usuario evaluado (el que administra por SSH; en la
+# práctica es el de AllowUsers, p. ej. "leonel"):
+#   1) variable USUARIO_SSH, si se indica;
+#   2) si no, el usuario que lanzó sudo (SUDO_USER);
+#   3) si no, profe1.
+# Ejemplo: sudo USUARIO_SSH=profe1 bash evaluar_apartado_e.sh ...
 # ==================================================
 
 if [ "$#" -ne 2 ]; then
@@ -25,6 +32,9 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 export LC_ALL=C
+
+USUARIO_SSH="${USUARIO_SSH:-${SUDO_USER:-profe1}}"
+[ "$USUARIO_SSH" = "root" ] && USUARIO_SSH="profe1"
 
 declare -A ESTADO ERRORES PUNTOS
 
@@ -98,11 +108,11 @@ if ip -o -4 addr show scope global |
     IP_LOCAL=1
 fi
 
-# Configuración efectiva para profe1
+# Configuración efectiva para el usuario evaluado
 # considerando la IP del cliente.
 obtener_config_ssh() {
     "$SSHD" -T \
-        -C "user=profe1,addr=$IP_CLIENTE,host=$IP_CLIENTE" \
+        -C "user=$USUARIO_SSH,addr=$IP_CLIENTE,host=$IP_CLIENTE" \
         2>/dev/null
 }
 
@@ -158,20 +168,20 @@ if [ "$IP_LOCAL" -ne 1 ]; then
         "La IP $IP_SERVIDOR no está asignada al servidor."
 fi
 
-if ! id profe1 >/dev/null 2>&1; then
-    fallar E2 "El usuario profe1 no existe."
+if ! id "$USUARIO_SSH" >/dev/null 2>&1; then
+    fallar E2 "El usuario $USUARIO_SSH no existe."
 else
-    SHELL_PROFE=$(getent passwd profe1 | cut -d: -f7)
+    SHELL_USR=$(getent passwd "$USUARIO_SSH" | cut -d: -f7)
 
-    if [ ! -x "$SHELL_PROFE" ]; then
+    if [ ! -x "$SHELL_USR" ]; then
         fallar E2 \
-            "El shell de profe1 no existe o no es ejecutable."
+            "El shell de $USUARIO_SSH no existe o no es ejecutable."
     fi
 
-    case "$SHELL_PROFE" in
+    case "$SHELL_USR" in
         */nologin|*/false)
             fallar E2 \
-                "profe1 tiene un shell que impide sesiones interactivas."
+                "$USUARIO_SSH tiene un shell que impide sesiones interactivas."
             ;;
     esac
 fi
@@ -183,7 +193,7 @@ else
 
     if [ -z "$CONFIG_SSH" ]; then
         fallar E2 \
-            "No se pudo obtener la configuración SSH para profe1."
+            "No se pudo obtener la configuración SSH para $USUARIO_SSH."
     else
         ALLOW_USERS=$(valor_config allowusers)
         DENY_USERS=$(valor_config denyusers)
@@ -193,16 +203,16 @@ else
         if [ -n "$ALLOW_USERS" ]; then
             if ! printf '%s\n' "$ALLOW_USERS" |
                  tr ' ' '\n' |
-                 grep -Eq '^profe1$|^profe1@'; then
+                 grep -Eq "^${USUARIO_SSH}\$|^${USUARIO_SSH}@"; then
                 fallar E2 \
-                    "profe1 no figura en AllowUsers."
+                    "$USUARIO_SSH no figura en AllowUsers."
             fi
         fi
 
         if printf '%s\n' "$DENY_USERS" |
            tr ' ' '\n' |
-           grep -Fxq 'profe1'; then
-            fallar E2 "profe1 está restringido por DenyUsers."
+           grep -Fxq "$USUARIO_SSH"; then
+            fallar E2 "$USUARIO_SSH está restringido por DenyUsers."
         fi
 
         # Los grupos de acceso se consultan
@@ -211,7 +221,7 @@ else
             EN_GRUPO=0
 
             for grupo in $ALLOW_GROUPS; do
-                if id -nG profe1 2>/dev/null |
+                if id -nG "$USUARIO_SSH" 2>/dev/null |
                    tr ' ' '\n' |
                    grep -Fxq "$grupo"; then
                     EN_GRUPO=1
@@ -220,16 +230,16 @@ else
 
             if [ "$EN_GRUPO" -ne 1 ]; then
                 fallar E2 \
-                    "profe1 no pertenece a un grupo permitido por AllowGroups."
+                    "$USUARIO_SSH no pertenece a un grupo permitido por AllowGroups."
             fi
         fi
 
         for grupo in $DENY_GROUPS; do
-            if id -nG profe1 2>/dev/null |
+            if id -nG "$USUARIO_SSH" 2>/dev/null |
                tr ' ' '\n' |
                grep -Fxq "$grupo"; then
                 fallar E2 \
-                    "profe1 pertenece al grupo denegado '$grupo'."
+                    "$USUARIO_SSH pertenece al grupo denegado '$grupo'."
             fi
         done
     fi
@@ -253,12 +263,12 @@ else
     fi
 fi
 
-HOME_PROFE=$(getent passwd profe1 | cut -d: -f6)
+HOME_USR=$(getent passwd "$USUARIO_SSH" | cut -d: -f6)
 
-if [ -z "$HOME_PROFE" ]; then
-    fallar E3 "No se encontró el directorio personal de profe1."
+if [ -z "$HOME_USR" ]; then
+    fallar E3 "No se encontró el directorio personal de $USUARIO_SSH."
 else
-    SSH_DIR="$HOME_PROFE/.ssh"
+    SSH_DIR="$HOME_USR/.ssh"
     AUTH_KEYS="$SSH_DIR/authorized_keys"
 
     if [ ! -d "$SSH_DIR" ]; then
@@ -273,7 +283,7 @@ else
     fi
 
     if [ ! -f "$AUTH_KEYS" ]; then
-        fallar E3 "No existe authorized_keys para profe1."
+        fallar E3 "No existe authorized_keys para $USUARIO_SSH."
     else
         if ! grep -Eq \
              '^[[:space:]]*(ssh-ed25519|ssh-rsa|ecdsa-sha2-)' \
@@ -360,9 +370,9 @@ REGISTROS=$(journalctl -u ssh \
     --no-pager 2>/dev/null)
 
 if ! printf '%s\n' "$REGISTROS" |
-     grep -Eq 'Accepted (publickey|password|keyboard-interactive) for profe1'; then
+     grep -Eq "Accepted (publickey|password|keyboard-interactive) for ${USUARIO_SSH} "; then
     fallar E5 \
-        "No se encontró una autenticación SSH reciente de profe1."
+        "No se encontró una autenticación SSH reciente de $USUARIO_SSH."
 fi
 
 # ==================================================

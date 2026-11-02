@@ -72,6 +72,48 @@ if ! validar_ip "$IP_SERVIDOR" ||
     exit 1
 fi
 
+# Convierte una IPv4 a entero.
+ip_a_entero() {
+    local IFS=.
+    local -a o
+    read -r -a o <<< "$1"
+    echo $(( (10#${o[0]} << 24) + (10#${o[1]} << 16) + (10#${o[2]} << 8) + 10#${o[3]} ))
+}
+
+# Limpia el origen de una regla UFW: quita el comentario
+# (# ...) y los espacios sobrantes.
+limpiar_origen() {
+    printf '%s\n' "$1" |
+        sed -E 's/[[:space:]]*#.*$//; s/[[:space:]]+$//; s/^[[:space:]]+//'
+}
+
+# Devuelve 0 si el origen de la regla es la IP del cliente
+# o una red concreta (CIDR, mínimo /16) que la contiene.
+# "Anywhere" y 0.0.0.0/0 no son orígenes autorizados.
+origen_autoriza_cliente() {
+    local origen red mascara bits
+    origen=$(limpiar_origen "$1")
+
+    if [ "$origen" = "$IP_CLIENTE" ] ||
+       [ "$origen" = "$IP_CLIENTE/32" ]; then
+        return 0
+    fi
+
+    [[ "$origen" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]{1,2})$ ]] ||
+        return 1
+
+    red="${origen%/*}"
+    bits="${origen#*/}"
+
+    validar_ip "$red" || return 1
+    (( bits >= 16 && bits <= 32 )) || return 1
+
+    mascara=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+
+    (( ($(ip_a_entero "$red") & mascara) ==
+       ($(ip_a_entero "$IP_CLIENTE") & mascara) ))
+}
+
 # ==================================================
 # F1. INSTALACIÓN VNC Y USUARIO AUTORIZADO
 # 2 PUNTOS
@@ -124,8 +166,8 @@ else
     # Comprobar que vncserver esté disponible
     # en el entorno del usuario.
 
-    if ! runuser -u profe1 -- \
-         bash -c 'command -v vncserver' \
+    # runuser -l inicia sesión de login: HOME y PATH son los de profe1.
+    if ! runuser -l profe1 -s /bin/bash -c 'command -v vncserver' \
          >/dev/null 2>&1; then
 
         fallar F2 \
@@ -136,8 +178,7 @@ else
         # Consultar las sesiones VNC del usuario.
 
         SALIDA_VNC=$(
-            runuser -u profe1 -- \
-            bash -c 'vncserver -list' 2>&1
+            runuser -l profe1 -s /bin/bash -c 'vncserver -list' 2>&1
         )
 
         CODIGO_VNC=$?
@@ -148,7 +189,9 @@ else
                 "No se pudo consultar vncserver -list: $SALIDA_VNC"
 
         elif ! printf '%s\n' "$SALIDA_VNC" |
-             grep -Eq '(^|[[:space:]]):1([[:space:]]|$)'; then
+             grep -Eq '^[[:space:]]*:?1[[:space:]]+5901([[:space:]]|$)'; then
+            # vncserver -list muestra "1   5901 ..." (pantalla y puerto);
+            # algunas versiones escriben ":1".
 
             fallar F2 \
                 "No se encontró una sesión VNC activa en :1 para profe1."
@@ -227,9 +270,9 @@ else
                 printf '%s\n' "$linea" |
                 sed -E 's/^.*ALLOW IN[[:space:]]+//'
             )
+            ORIGEN=$(limpiar_origen "$ORIGEN")   # sin "# comentario"
 
-            if [ "$ORIGEN" = "$IP_CLIENTE" ] ||
-               [ "$ORIGEN" = "$IP_CLIENTE/32" ]; then
+            if origen_autoriza_cliente "$ORIGEN"; then
 
                 PERMITIDO=1
 

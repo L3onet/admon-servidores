@@ -81,6 +81,48 @@ for cmd in ufw ss awk grep systemctl; do
     fi
 done
 
+# Convierte una IPv4 a entero.
+ip_a_entero() {
+    local IFS=.
+    local -a o
+    read -r -a o <<< "$1"
+    echo $(( (10#${o[0]} << 24) + (10#${o[1]} << 16) + (10#${o[2]} << 8) + 10#${o[3]} ))
+}
+
+# Limpia el origen de una regla UFW: quita el comentario
+# (# ...) y los espacios sobrantes.
+limpiar_origen() {
+    printf '%s\n' "$1" |
+        sed -E 's/[[:space:]]*#.*$//; s/[[:space:]]+$//; s/^[[:space:]]+//'
+}
+
+# Devuelve 0 si el origen de la regla es la IP del cliente
+# o una red concreta (CIDR, mínimo /16) que la contiene.
+# "Anywhere" y 0.0.0.0/0 no son orígenes autorizados.
+origen_autoriza_cliente() {
+    local origen red mascara bits
+    origen=$(limpiar_origen "$1")
+
+    if [ "$origen" = "$IP_CLIENTE" ] ||
+       [ "$origen" = "$IP_CLIENTE/32" ]; then
+        return 0
+    fi
+
+    [[ "$origen" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]{1,2})$ ]] ||
+        return 1
+
+    red="${origen%/*}"
+    bits="${origen#*/}"
+
+    validar_ip "$red" || return 1
+    (( bits >= 16 && bits <= 32 )) || return 1
+
+    mascara=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+
+    (( ($(ip_a_entero "$red") & mascara) ==
+       ($(ip_a_entero "$IP_CLIENTE") & mascara) ))
+}
+
 # Obtener estado y reglas.
 UFW_VERBOSE=$(ufw status verbose 2>&1)
 UFW_NUMBERED=$(ufw status numbered 2>&1)
@@ -116,11 +158,12 @@ regla_accion() {
 
 regla_origen() {
     printf '%s\n' "$1" |
-        sed -E 's/^.*[[:space:]](ALLOW|DENY|REJECT) IN[[:space:]]+//'
+        sed -E 's/^.*[[:space:]](ALLOW|DENY|REJECT) IN[[:space:]]+//' |
+        sed -E 's/[[:space:]]*#.*$//; s/[[:space:]]+$//'
 }
 
-# Detecta permisos para un puerto desde
-# cualquier origen diferente del cliente.
+# Detecta permisos para un puerto desde cualquier origen
+# que no sea el cliente o una red (/16 a /32) que lo contenga.
 # Esto incluye reglas amplias no reconocidas,
 # que impiden certificar automáticamente
 # la política como segura.
@@ -136,8 +179,7 @@ permiso_inseguro() {
         origen=$(regla_origen "$linea")
 
         if [ "$accion" = "ALLOW" ] &&
-           [ "$origen" != "$IP_CLIENTE" ] &&
-           [ "$origen" != "$IP_CLIENTE/32" ]; then
+           ! origen_autoriza_cliente "$origen"; then
             return 0
         fi
     done < <(reglas_puerto "$puerto")
@@ -164,8 +206,7 @@ permiso_cliente() {
         origen=$(regla_origen "$linea")
 
         if [ "$accion" = "ALLOW" ] &&
-           { [ "$origen" = "$IP_CLIENTE" ] ||
-             [ "$origen" = "$IP_CLIENTE/32" ]; }; then
+           origen_autoriza_cliente "$origen"; then
             return 0
         fi
     done < <(reglas_puerto "$puerto")
@@ -283,7 +324,7 @@ if ! printf '%s\n' "$UFW_VERBOSE" |
         "La política de entrada no bloquea por defecto."
 fi
 
-for puerto in 22 5901; do
+for puerto in 22 445 5901; do
 
     if permiso_inseguro "$puerto"; then
         fallar D4 \

@@ -9,7 +9,7 @@
 #
 # G1: Identificación del servidor (2 puntos)
 # G2: Registros SSH remotos (3 puntos)
-# G3: Archivo generado remotamente (3 puntos)
+# G3: Archivo de evidencia creado en el acceso remoto (3 puntos)
 # ==================================================
 
 if [ "$#" -ne 2 ]; then
@@ -165,17 +165,17 @@ CONEXIONES=$(ss -tnp 2>/dev/null |
     grep -E ':22|:5901' || true)
 
 # ==================================================
-# G3. CREACIÓN DE ARCHIVO DESDE SESIÓN REMOTA
+# G3. ARCHIVO CREADO DE FORMA REMOTA
 # 3 PUNTOS
 #
-# No se considera evidencia suficiente crear el
-# archivo desde la ejecución local del evaluador.
+# Práctica (sección 4.4): desde el escritorio remoto
+# VNC, profe1 crea
+#   ~/Escritorio/evidencia-vnc.txt   (o ~/Desktop/...)
+# con el texto "Acceso remoto por VNC - <fecha>".
 #
-# Si el usuario profe1 ejecuta el evaluador
-# durante una sesión SSH, se crea el archivo.
-#
-# Si se ejecuta localmente, se comprueba que
-# exista el archivo de evidencia de profe1.
+# Se acepta también el archivo alternativo
+#   ~/evidencia_remota.txt
+# con la línea exacta "Archivo creado remotamente".
 # ==================================================
 
 if ! id profe1 >/dev/null 2>&1; then
@@ -185,49 +185,42 @@ if ! id profe1 >/dev/null 2>&1; then
 else
 
     HOME_PROFE=$(getent passwd profe1 | cut -d: -f6)
-    ARCHIVO="$HOME_PROFE/evidencia_remota.txt"
 
-    # Comprobar si la sesión original desde la
-    # que se invocó sudo pertenece a profe1.
-    USUARIO_ORIGINAL="${SUDO_USER:-}"
+    ARCHIVO=""
+    TEXTO=""
 
-    # SSH_CONNECTION solo se hereda si sudo lo
-    # conserva; no se usa como única prueba.
-    SSH_ORIGEN="${SSH_CONNECTION:-}"
+    for candidato in \
+        "$HOME_PROFE/Escritorio/evidencia-vnc.txt" \
+        "$HOME_PROFE/Desktop/evidencia-vnc.txt" \
+        "$HOME_PROFE/evidencia-vnc.txt" \
+        "$HOME_PROFE/evidencia_remota.txt"; do
 
-    if [ "$USUARIO_ORIGINAL" = "profe1" ] &&
-       [ -n "$SSH_ORIGEN" ]; then
-
-        # Crear como profe1, no como root.
-        if ! runuser -u profe1 -- \
-             bash -c \
-             'echo "Archivo creado remotamente" > "$HOME/evidencia_remota.txt"'; then
-
-            fallar G3 \
-                "No se pudo crear el archivo desde la sesión SSH."
+        if [ -f "$candidato" ]; then
+            ARCHIVO="$candidato"
+            break
         fi
-    fi
+    done
 
-    # Verificación del archivo solicitado.
-
-    if [ ! -f "$ARCHIVO" ]; then
+    if [ -z "$ARCHIVO" ]; then
 
         fallar G3 \
-            "No existe $ARCHIVO. Debe crearse desde una sesión remota."
+            "No existe evidencia-vnc.txt en el Escritorio de profe1 (ni evidencia_remota.txt)."
 
     else
 
+        case "$ARCHIVO" in
+            */evidencia_remota.txt)
+                TEXTO='^Archivo creado remotamente$'
+                ;;
+            *)
+                TEXTO='^Acceso remoto por VNC'
+                ;;
+        esac
+
         if [ ! -r "$ARCHIVO" ]; then
-            fallar G3 \
-                "No se puede leer el archivo de evidencia."
-        fi
-
-        if ! grep -Fxq \
-             'Archivo creado remotamente' \
-             "$ARCHIVO"; then
-
-            fallar G3 \
-                "El archivo no contiene el texto esperado."
+            fallar G3 "No se puede leer $ARCHIVO."
+        elif ! grep -Eq "$TEXTO" "$ARCHIVO"; then
+            fallar G3 "El archivo $ARCHIVO no contiene el texto esperado."
         fi
 
         PROPIETARIO=$(stat -c '%U' "$ARCHIVO")

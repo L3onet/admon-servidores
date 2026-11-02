@@ -33,13 +33,16 @@ export LC_ALL=C
 # CONFIGURACIÓN
 # ==========================================
 
-IMPRESORA_USB="Impresora_USB"
-IMPRESORA_RED="Impresora_Red"
+# Nombres de cola de la práctica (impresora.md).
+# Se pueden cambiar: sudo IMPRESORA_USB=Otra bash ...
+IMPRESORA_USB="${IMPRESORA_USB:-USB_Lab}"
+IMPRESORA_RED="${IMPRESORA_RED:-Red_Lab}"
 
 # IP de impresora de red.
 # Se puede cambiar sin modificar el script:
-# sudo IP_IMPRESORA=192.168.1.50 bash ...
-IP_IMPRESORA="${IP_IMPRESORA:-192.168.1.50}"
+# sudo IP_IMPRESORA=192.168.1.80 bash ...
+# (en la práctica el servidor es 192.168.1.50 y la impresora 192.168.1.80)
+IP_IMPRESORA="${IP_IMPRESORA:-192.168.1.80}"
 
 declare -A ESTADO ERRORES PUNTOS
 
