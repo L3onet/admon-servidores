@@ -1,0 +1,3 @@
+# Línea AÑADIDA al /etc/fstab existente (no sustituyas el archivo completo).
+# AVISO: dominio de ejemplo leonel.mx.
+/run/systemd/journal/dev-log /var/www/leonel.mx/dev/log none bind,x-systemd.requires=systemd-journald-dev-log.socket 0 0

@@ -1,0 +1,14 @@
+// AVISO: valores de ejemplo (dominio leonel.mx, red 192.168.50.0/24). Sustitúyelos por tu dominio y tu octeto.
+include "/etc/bind/kea-ddns.key";
+
+zone "leonel.mx" {
+    type primary;
+    file "/var/lib/bind/db.leonel.mx";
+    update-policy { grant kea-ddns zonesub ANY; };
+};
+
+zone "50.168.192.in-addr.arpa" {
+    type primary;
+    file "/var/lib/bind/db.50.168.192.in-addr.arpa";
+    update-policy { grant kea-ddns zonesub ANY; };
+};

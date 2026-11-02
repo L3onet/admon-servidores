@@ -1,0 +1,12 @@
+// AVISO: valores de ejemplo (dominio leonel.mx, red 192.168.50.0/24). Sustitúyelos por tu dominio y tu octeto.
+// Zona directa: nombre -> IP
+zone "leonel.mx" {
+    type primary;
+    file "/var/lib/bind/db.leonel.mx";
+};
+
+// Zona inversa: IP -> nombre (red 192.168.50.0/24)
+zone "50.168.192.in-addr.arpa" {
+    type primary;
+    file "/var/lib/bind/db.50.168.192.in-addr.arpa";
+};

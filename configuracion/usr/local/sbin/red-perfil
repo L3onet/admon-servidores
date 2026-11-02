@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Alterna entre perfiles de red de Netplan
+set -euo pipefail
+
+PERFILES="/etc/netplan/perfiles"
+DESTINO="/etc/netplan/01-netcfg.yaml"
+
+uso() {
+  echo "Uso: sudo red-perfil {estatica|dhcp|estado}"
+  exit 1
+}
+
+[[ $EUID -eq 0 ]] || { echo "Error: ejecuta con sudo."; exit 1; }
+
+case "${1:-}" in
+  estatica|dhcp)
+    ORIGEN="$PERFILES/$1.yaml"
+    [[ -f "$ORIGEN" ]] || { echo "Error: no existe $ORIGEN"; exit 1; }
+    install -m 600 -o root -g root "$ORIGEN" "$DESTINO"
+    netplan generate            # valida antes de aplicar
+    netplan apply
+    echo "✔ Perfil '$1' aplicado."
+    ip -br -4 addr show scope global
+    ;;
+  estado)
+    if grep -q 'dhcp4: true' "$DESTINO"; then
+      echo "Perfil actual: DHCP"
+    else
+      echo "Perfil actual: estática"
+    fi
+    ip -br -4 addr show scope global
+    ip route | grep default || true
+    ;;
+  *)
+    uso
+    ;;
+esac

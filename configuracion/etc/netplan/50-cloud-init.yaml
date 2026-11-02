@@ -1,0 +1,8 @@
+# NOTA: archivo del CLIENTE (no del servidor); puede llamarse distinto en tu equipo.
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      dhcp4: true
+      dhcp4-overrides:
+        use-domains: true

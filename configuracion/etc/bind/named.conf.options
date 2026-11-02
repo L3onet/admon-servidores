@@ -1,0 +1,29 @@
+// AVISO: valores de ejemplo (dominio leonel.mx, red 192.168.50.0/24). Sustitúyelos por tu dominio y tu octeto.
+// Red del laboratorio: solo estos equipos pueden consultar
+acl "lab" {
+    127.0.0.0/8;
+    192.168.50.0/24;
+};
+
+options {
+    directory "/var/cache/bind";
+
+    // Escuchar SOLO en localhost y en la red DHCP (adaptador 3).
+    // Nunca en enp0s8 (192.168.1.x), la red de la escuela.
+    listen-on port 53 { 127.0.0.1; 192.168.50.1; };
+    listen-on-v6 { none; };
+
+    allow-query     { lab; };
+    allow-recursion { lab; };
+    recursion yes;
+
+    // Nadie puede descargar la zona completa
+    allow-transfer { none; };
+
+    // Laboratorio sin internet: sin reenviadores y sin validación DNSSEC
+    // (no puede descargar las llaves raíz). En producción usa "auto".
+    dnssec-validation no;
+
+    // No revelar la versión de BIND
+    version "no disponible";
+};

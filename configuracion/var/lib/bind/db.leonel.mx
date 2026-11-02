@@ -1,0 +1,26 @@
+; AVISO: valores de ejemplo (dominio leonel.mx, red 192.168.50.0/24). Sustitúyelos por tu dominio y tu octeto.
+$TTL 3600
+@       IN  SOA ns1.leonel.mx. admin.leonel.mx. (
+                2026102601  ; Serial (AAAAMMDDNN): súbelo en cada cambio
+                3600        ; Refresh
+                900         ; Retry
+                604800      ; Expire
+                300 )       ; TTL negativo
+
+; Servidor de nombres y de correo del dominio
+@               IN  NS      ns1.leonel.mx.
+@               IN  MX  10  mail.leonel.mx.
+
+; Registros A
+@               IN  A       192.168.50.1
+ns1             IN  A       192.168.50.1
+srv-dhcp        IN  A       192.168.50.1
+mail            IN  A       192.168.50.1
+cliente-fijo    IN  A       192.168.50.50
+
+; Alias para las siguientes prácticas
+www             IN  CNAME   srv-dhcp
+ftp             IN  CNAME   srv-dhcp
+
+; Añadido en la práctica de correo (SPF)
+@               IN  TXT     "v=spf1 mx -all"

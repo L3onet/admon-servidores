@@ -1,0 +1,7 @@
+# AVISO: valores de ejemplo (dominio leonel.mx, red 192.168.50.0/24). Sustitúyelos por tu dominio y tu octeto.
+basicConstraints       = critical, CA:FALSE
+keyUsage               = critical, digitalSignature, keyEncipherment
+extendedKeyUsage       = serverAuth
+subjectAltName         = DNS:leonel.mx, DNS:www.leonel.mx, DNS:srv-dhcp.leonel.mx, DNS:ftp.leonel.mx, DNS:mail.leonel.mx, IP:192.168.50.1
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid,issuer

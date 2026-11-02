@@ -1,0 +1,14 @@
+; AVISO: valores de ejemplo (dominio leonel.mx, red 192.168.50.0/24). Sustitúyelos por tu dominio y tu octeto.
+$TTL 3600
+@       IN  SOA ns1.leonel.mx. admin.leonel.mx. (
+                2026102601  ; Serial
+                3600        ; Refresh
+                900         ; Retry
+                604800      ; Expire
+                300 )       ; TTL negativo
+
+@       IN  NS      ns1.leonel.mx.
+
+; Último octeto de la IP -> nombre completo (con punto final)
+1       IN  PTR     srv-dhcp.leonel.mx.
+50      IN  PTR     cliente-fijo.leonel.mx.

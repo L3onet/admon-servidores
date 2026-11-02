@@ -1,0 +1,8 @@
+# AVISO: valores de ejemplo (interfaz, IPs, gateway). Ajústalos a tu equipo y red antes de aplicar.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp2s0:
+      dhcp4: true
+      dhcp6: false

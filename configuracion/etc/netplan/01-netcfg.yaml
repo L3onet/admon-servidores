@@ -1,0 +1,15 @@
+# AVISO: valores de ejemplo (interfaz, IPs, gateway). Ajústalos a tu equipo y red antes de aplicar.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    enp0s3:            # NAT: Internet y ruta por defecto
+      dhcp4: true
+      dhcp6: false
+    enp0s8:            # Solo-Anfitrión: red con el anfitrión
+      dhcp4: true
+      dhcp6: false
+      dhcp4-overrides:
+        use-routes: false
+        use-dns: false
+      optional: true

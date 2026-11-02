@@ -1,0 +1,2 @@
+# Línea AÑADIDA al /etc/aliases existente (después ejecuta: sudo newaliases)
+root: ana

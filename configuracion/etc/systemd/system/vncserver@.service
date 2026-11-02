@@ -1,0 +1,18 @@
+[Unit]
+Description=Escritorio VNC de %i
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+WorkingDirectory=/home/%i
+EnvironmentFile=/etc/vnc/%i.conf
+ExecStartPre=-/usr/bin/vncserver -kill :${PANTALLA}
+ExecStart=/usr/bin/vncserver :${PANTALLA} -fg -geometry ${RESOLUCION} -depth 24 -localhost no -xstartup /home/%i/.vnc/xstartup
+ExecStop=/usr/bin/vncserver -kill :${PANTALLA}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
