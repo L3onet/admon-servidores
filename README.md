@@ -7,6 +7,11 @@ Guías prácticas de administración de **Ubuntu Server** (principalmente 26.04.
 - [Estructura del repositorio](#estructura-del-repositorio)
 - [Prácticas del tema 2](#prácticas-del-tema-2)
 - [Prácticas del tema 3](#prácticas-del-tema-3)
+- [Archivos de configuración](#archivos-de-configuración)
+  - [Convenciones](#convenciones)
+  - [Variantes de un mismo archivo](#variantes-de-un-mismo-archivo)
+  - [Archivos por práctica](#archivos-por-práctica)
+  - [Cómo usarlos](#cómo-usarlos)
 - [Scripts de evaluación del tema 2](#scripts-de-evaluación-del-tema-2)
   - [Requisitos](#requisitos)
   - [Copiar los scripts al servidor](#copiar-los-scripts-al-servidor)
@@ -23,6 +28,7 @@ Guías prácticas de administración de **Ubuntu Server** (principalmente 26.04.
 .
 ├── practicas-tema-2/   # Red, paquetes, SSH, impresoras, usuarios/Samba/UFW/VNC
 ├── practicas-tema-3/   # Servicios de red: DHCP, DNS, Web, SFTP y correo
+├── configuracion/      # Archivos de configuración extraídos de las prácticas, en su ruta real
 └── scripts-tema-2/     # Scripts de evaluación automática (apartados A–H)
 ```
 
@@ -77,15 +83,142 @@ Notas comunes:
 
 ---
 
+## Archivos de configuración
+
+El directorio [configuracion/](configuracion/) reúne los archivos que las prácticas de los temas 2 y 3 hacen crear en el servidor (56 archivos). Cada uno se guarda **en la misma ruta** que indica la práctica, tomando `configuracion/` como la raíz `/` del sistema. Por ejemplo, `/etc/netplan/60-lab-dhcp.yaml` de la [práctica DHCP](practicas-tema-3/servidor-dhcp.md) está en [configuracion/etc/netplan/60-lab-dhcp.yaml](configuracion/etc/netplan/60-lab-dhcp.yaml).
+
+### Convenciones
+
+- **Valores de ejemplo.** Los archivos conservan los datos de la práctica: dominio `leonel.mx`, red `192.168.50.0/24`, IP `192.168.1.50`, usuario `leonel`, etc. Los que los contienen empiezan con un comentario `AVISO` que indica qué cambiar. Los marcadores `CLAVE_BD`, `LLAVE_DES`, `PEGA_AQUI_EL_SECRET` y `${DB_PASS}` hay que sustituirlos por valores reales.
+- **Usuario de los scripts.** Lo que en la práctica vive en `~` está en `home/usuario/` (cámbialo por tu usuario). El `xstartup` de VNC está en `home/profe1/.vnc/`.
+- **Líneas añadidas.** [etc/aliases](configuracion/etc/aliases) y [etc/fstab](configuracion/etc/fstab) contienen solo la línea que la práctica **agrega** a un archivo existente; no sustituyas el archivo completo.
+- **Scripts.** Los de `home/usuario/` y `usr/local/sbin/` tienen permiso de ejecución.
+- **Fuera de la carpeta:** los comandos `sed`, `postconf` y `ufw`, la llave `authorized_keys` de ejemplo, `kea-ddns.key` (se genera con `tsig-keygen`) y las páginas de prueba `practica4.html` y `hora.php`.
+
+### Variantes de un mismo archivo
+
+Varias prácticas modifican la misma ruta. En la ruta exacta está la **versión final** (la que resulta de aplicar todas las prácticas) y las demás quedan al lado con un sufijo:
+
+| Ruta | Contenido de la versión sin sufijo | Variantes |
+|------|-----------------------------------|-----------|
+| `etc/netplan/01-netcfg.yaml` | NAT + Solo-Anfitrión (`enp0s3` y `enp0s8`) | `.red_estatica`, `.red_dinamica`, `.red_dinamica_host-only_solo-nat`, `.red_dinamica_host-only`, `.red_estatica_dinamica-dhcp`, `.red_estatica_dinamica-estatica` |
+| `etc/netplan/60-lab-dhcp.yaml` | Con `nameservers` (DNS) y `optional: true` en `enp0s3` (web) | `.servidor-dhcp` (original) |
+| `etc/netplan/50-cloud-init.yaml` | Cliente con `use-domains: true` (DNS) | `.servidor-dhcp` |
+| `etc/kea/kea-dhcp4.conf` | DNS propio `leonel.mx` + DDNS | `.servidor-dhcp` (con `lab.local` y sin DDNS) |
+| `etc/bind/named.conf.local` | Zonas con `update-policy` para DDNS | `.sin-ddns` |
+| `etc/samba/smb.conf` | Con impresión por CUPS y el recurso `[USB_Lab]` | `.practica_usuarios` (original) |
+| `var/lib/bind/db.leonel.mx` | Zona base + registro SPF de la práctica de correo | — |
+
+### Archivos por práctica
+
+**Tema 2: red y paquetes**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/netplan/01-netcfg.yaml](configuracion/etc/netplan/01-netcfg.yaml) y variantes | IP estática o DHCP con Netplan, según la práctica. |
+| [etc/netplan/perfiles/dhcp.yaml](configuracion/etc/netplan/perfiles/dhcp.yaml), [estatica.yaml](configuracion/etc/netplan/perfiles/estatica.yaml) | Perfiles de red entre los que alterna `red-perfil`. |
+| [usr/local/sbin/red-perfil](configuracion/usr/local/sbin/red-perfil) | Script que cambia de perfil (`estatica`, `dhcp`, `estado`). |
+| [etc/cloud/cloud.cfg.d/99-disable-network-config.cfg](configuracion/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg) | Impide que cloud-init regenere la red. |
+| [etc/apt/preferences.d/nginx](configuracion/etc/apt/preferences.d/nginx) | *Pinning* de APT para `nginx`. |
+
+**Tema 2: SSH**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/ssh/sshd_config.d/00-seguridad.conf](configuracion/etc/ssh/sshd_config.d/00-seguridad.conf) | Endurecimiento de `sshd`: sin root, solo llave, `MaxAuthTries 3`. |
+| [etc/ssh/sshd_config.d/05-puerto.conf](configuracion/etc/ssh/sshd_config.d/05-puerto.conf) | Cambio de puerto a 2222. |
+| [etc/ssh/sshd_config.d/10-banner.conf](configuracion/etc/ssh/sshd_config.d/10-banner.conf), [etc/issue.net](configuracion/etc/issue.net) | Aviso previo al login. |
+| [etc/ssh/sshd_config.d/20-penalizaciones.conf](configuracion/etc/ssh/sshd_config.d/20-penalizaciones.conf) | Exime a la red local de las penalizaciones de OpenSSH 10. |
+| [etc/fail2ban/jail.d/sshd.local](configuracion/etc/fail2ban/jail.d/sshd.local) | Fail2ban para SSH. |
+
+**Tema 2: usuarios, Samba, VNC e impresoras**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/samba/smb.conf](configuracion/etc/samba/smb.conf) y `.practica_usuarios` | Recursos `publico`, `docentes`, `entregas` y la impresora `USB_Lab`. |
+| [etc/systemd/system/vncserver@.service](configuracion/etc/systemd/system/vncserver@.service) | Servicio systemd de TigerVNC por usuario. |
+| [etc/vnc/profe1.conf](configuracion/etc/vnc/profe1.conf) | Pantalla `:1` y resolución de `profe1`. |
+| [home/profe1/.vnc/xstartup](configuracion/home/profe1/.vnc/xstartup) | Arranca el escritorio XFCE. |
+
+**Tema 3: DHCP (Kea)**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/netplan/60-lab-dhcp.yaml](configuracion/etc/netplan/60-lab-dhcp.yaml) | Las tres interfaces del servidor (NAT y dos puentes). |
+| [etc/kea/kea-dhcp4.conf](configuracion/etc/kea/kea-dhcp4.conf) | Servidor DHCPv4: pool, reservaciones y DDNS. |
+| [etc/netplan/50-cloud-init.yaml](configuracion/etc/netplan/50-cloud-init.yaml) | Cliente Linux con DHCP. |
+| [etc/systemd/network/10-netplan-enp0s3.network.d/solo-kea.conf](configuracion/etc/systemd/network/10-netplan-enp0s3.network.d/solo-kea.conf) | El cliente solo acepta ofertas de su servidor Kea. |
+| [etc/default/isc-dhcp-server](configuracion/etc/default/isc-dhcp-server), [etc/dhcp/dhcpd.conf](configuracion/etc/dhcp/dhcpd.conf) | Anexo heredado con `isc-dhcp-server`. |
+| [home/usuario/recolectar_evidencias.sh](configuracion/home/usuario/recolectar_evidencias.sh) | Paquete de evidencias. |
+
+**Tema 3: DNS (BIND 9)**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/bind/named.conf.options](configuracion/etc/bind/named.conf.options) | ACL, escucha solo en la red del laboratorio y recursión. |
+| [etc/bind/named.conf.local](configuracion/etc/bind/named.conf.local) | Declaración de las zonas directa e inversa. |
+| [var/lib/bind/db.leonel.mx](configuracion/var/lib/bind/db.leonel.mx), [db.50.168.192.in-addr.arpa](configuracion/var/lib/bind/db.50.168.192.in-addr.arpa) | Zonas directa e inversa. |
+| [etc/kea/kea-dhcp-ddns.conf](configuracion/etc/kea/kea-dhcp-ddns.conf) | Actualizaciones dinámicas de DNS desde Kea (TSIG). |
+| [home/usuario/evidencias_dns.sh](configuracion/home/usuario/evidencias_dns.sh) | Paquete de evidencias. |
+
+**Tema 3: Web (Nginx + PHP + MySQL)**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/ssl/lab/www.leonel.mx.ext](configuracion/etc/ssl/lab/www.leonel.mx.ext) | Extensiones X.509 (SAN) del certificado firmado por la CA propia. |
+| [etc/nginx/sites-available/leonel.mx](configuracion/etc/nginx/sites-available/leonel.mx) | Sitio HTTPS con HTTP/2, PHP-FPM y cabeceras de seguridad. |
+| [var/www/leonel.mx/config.php](configuracion/var/www/leonel.mx/config.php) | Credenciales de MySQL, fuera de la raíz web. |
+| [var/www/leonel.mx/public/index.php](configuracion/var/www/leonel.mx/public/index.php) | Página principal PHP + MySQL. |
+| [etc/sysctl.d/60-nonlocal-bind.conf](configuracion/etc/sysctl.d/60-nonlocal-bind.conf) | Respaldo si Nginx arranca antes que `enp0s9`. |
+| [home/usuario/evidencias_web.sh](configuracion/home/usuario/evidencias_web.sh) | Paquete de evidencias. |
+
+**Tema 3: SFTP**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/ssh/sshd_config.d/60-sftp-web.conf](configuracion/etc/ssh/sshd_config.d/60-sftp-web.conf) | *Chroot* y solo SFTP para el grupo `sftpweb`. |
+| [etc/fstab](configuracion/etc/fstab) | Línea que monta `/dev/log` dentro del chroot (registro de transferencias). |
+| [home/usuario/.ssh/config](configuracion/home/usuario/.ssh/config) | Alias `ftp.leonel.mx` en el cliente. |
+| [home/usuario/evidencias_sftp.sh](configuracion/home/usuario/evidencias_sftp.sh) | Paquete de evidencias. |
+
+**Tema 3: correo (Postfix + Dovecot + Roundcube)**
+
+| Archivo | Para qué sirve |
+|---------|----------------|
+| [etc/aliases](configuracion/etc/aliases) | Línea que envía el correo de `root` a `ana`. |
+| [etc/postfix/login_maps.regexp](configuracion/etc/postfix/login_maps.regexp) | Cada usuario solo envía como su propia dirección. |
+| [etc/dovecot/local.conf](configuracion/etc/dovecot/local.conf) | Dovecot 2.4: Maildir, TLS, LMTP y SASL. |
+| [var/www/roundcube/config/config.inc.php](configuracion/var/www/roundcube/config/config.inc.php) | Webmail Roundcube. |
+| [etc/nginx/sites-available/mail.leonel.mx](configuracion/etc/nginx/sites-available/mail.leonel.mx) | Sitio HTTPS de Roundcube. |
+| [home/usuario/evidencias_correo.sh](configuracion/home/usuario/evidencias_correo.sh) | Paquete de evidencias. |
+
+### Cómo usarlos
+
+Copia un archivo a su ruta real y ajusta los valores de ejemplo. Con `sudo` y `install` se fijan los permisos en un paso:
+
+```bash
+sudo install -m 600 -o root -g root configuracion/etc/netplan/60-lab-dhcp.yaml /etc/netplan/60-lab-dhcp.yaml
+```
+
+Para ver qué cambia respecto a lo que ya tienes en el servidor:
+
+```bash
+diff -u /etc/kea/kea-dhcp4.conf configuracion/etc/kea/kea-dhcp4.conf
+```
+
+Los archivos de `/etc/netplan/` deben tener permisos `600`, y conviene validar antes de aplicar (`netplan try`, `sshd -t`, `nginx -t`, `kea-dhcp4 -t`, etc.).
+
+---
+
 ## Scripts de evaluación del tema 2
 
 El directorio [scripts-tema-2/](scripts-tema-2/) contiene ocho scripts Bash, uno por apartado (A–H), que revisan la configuración del servidor del escenario de la práctica de [usuarios, Samba, UFW y VNC](practicas-tema-2/practica_usuarios_tema3.md), de [SSH](practicas-tema-2/ssh.md) y de [impresoras](practicas-tema-2/impresora.md), y asignan una puntuación.
 
-Los scripts **solo consultan** el estado del sistema; las únicas acciones que realizan son trabajos de impresión de prueba (apartado H, que cancela uno) y, en un caso concreto, crear el archivo de evidencia del apartado G.
+Los scripts **solo consultan** el estado del sistema; las únicas acciones que realizan son trabajos de impresión de prueba (apartado H, que cancela uno) y un archivo de prueba que el apartado C sube a `entregas` y borra.
 
 ### Requisitos
 
-- Ubuntu Server con Bash 4 o superior.
+- Ubuntu Server con Bash 4 o superior (el apartado C usa `${var^^}`).
 - Ejecutarse **en el servidor** que se evalúa.
 - `sudo` para todos los apartados excepto A (B funciona sin él, pero no puede verificar privilegios).
 - Nombres que los scripts esperan (fijos en el código):
@@ -182,7 +315,7 @@ Sin parámetros: `sudo bash evaluar-apartado-b.sh`.
 
 #### C. Seguridad de archivos y Samba (22 puntos)
 
-Es el script con más requisitos, porque C6 y C7 prueban el acceso **desde el cliente** (Linux con `smbclient`) conectándose a él por SSH.
+Todas las pruebas se hacen **en el servidor** con `smbclient` contra `IP_SERVIDOR`; no hace falta SSH ni un cliente Linux (`IP_CLIENTE` solo se valida).
 
 | Indicador | Puntos | Qué comprueba |
 |-----------|-------:|---------------|
@@ -191,33 +324,22 @@ Es el script con más requisitos, porque C6 y C7 prueban el acceso **desde el cl
 | C3 | 4 | `testparm` sin errores; recursos `[publico]`, `[docentes]` y `[entregas]` definidos y visibles con `smbclient`. |
 | C4 | 4 | Existen `/srv/samba/{publico,docentes,entregas}` con propietario y grupo válidos y bit **setgid**. |
 | C5 | 3 | Servicio `smbd` activo y puerto TCP 445 escuchando. |
-| C6 | 3 | Desde el cliente: `profe1` lista `publico` y `alumno1` sube un archivo a `entregas`. |
-| C7 | 3 | Desde el cliente: `alumno1` se autentica en `publico` pero **no** puede acceder a `docentes`. |
+| C6 | 3 | `profe1` lista `publico` y `alumno1` sube un archivo a `entregas` (se borra al terminar). |
+| C7 | 3 | `alumno1` se autentica en `publico` pero **no** puede acceder a `docentes`. |
 
-Preparación necesaria:
+**Contraseñas Samba** de `profe1` y `alumno1`. El script las busca en este orden:
 
-1. **Archivos de credenciales** en el servidor **y** en el cliente, en `/root/.samba-profe1` y `/root/.samba-alumno1`, con permisos `600`:
+1. Archivos `/root/.samba-profe1` y `/root/.samba-alumno1` (permisos `600`):
 
    ```text
    username = profe1
    password = CONTRASENA
    ```
 
-2. **SSH por llave desde el `root` del servidor al cliente**, sin contraseña. El script se ejecuta con `sudo`, por lo que usa las llaves y el `known_hosts` de `root` (`StrictHostKeyChecking=yes`: la huella del cliente debe estar aceptada de antemano):
+2. Variables de entorno `SMB_PASS_PROFE1` y `SMB_PASS_ALUMNO1`.
+3. Las pide por teclado, sin mostrarlas.
 
-   ```bash
-   sudo ssh-keygen -t ed25519
-   sudo ssh-copy-id usuario@192.168.1.60
-   sudo ssh usuario@192.168.1.60 true   # acepta la huella una vez
-   ```
-
-3. En el cliente, el usuario remoto debe poder ejecutar `sudo` **sin contraseña** (para leer las credenciales de `/root`) y tener `smbclient` instalado.
-
-Por defecto el usuario SSH del cliente es el que invocó `sudo` en el servidor. Para usar otro:
-
-```bash
-sudo SSH_CLIENT_USER=usuario bash evaluar-apartado-c.sh 192.168.1.50 192.168.1.60
-```
+Si no hay ninguna, C3, C6 y C7 fallan con un mensaje claro. Las credenciales temporales se borran al terminar.
 
 #### D. Firewall UFW (14 puntos)
 
@@ -226,9 +348,11 @@ sudo SSH_CLIENT_USER=usuario bash evaluar-apartado-c.sh 192.168.1.50 192.168.1.6
 | Indicador | Puntos | Qué comprueba |
 |-----------|-------:|---------------|
 | D1 | 3 | UFW activo, con reglas numeradas y política predeterminada consultable. |
-| D2 | 4 | Política de entrada `deny`; existe `ALLOW IN` para 22/tcp y 445/tcp **solo** desde `IP_CLIENTE`, sin reglas amplias; ambos servicios escuchando. |
+| D2 | 4 | Política de entrada `deny`; existe `ALLOW IN` para 22/tcp y 445/tcp desde `IP_CLIENTE` o desde una red (entre `/16` y `/32`) que lo contenga, sin reglas amplias; ambos servicios escuchando. |
 | D3 | 3 | La política permite al cliente en 22 y 445 y los servicios SSH y Samba están activos. |
 | D4 | 4 | La entrada se bloquea por defecto y no hay `ALLOW IN` desde orígenes no autorizados. |
+
+El comentario de la regla (`# SSH LAN`) se ignora al comparar el origen. `Anywhere` y `0.0.0.0/0` no cuentan como autorizados.
 
 D3 y D4 evalúan las **políticas**, no conexiones reales. Si no hay registros `UFW BLOCK` en el kernel, el script muestra un aviso: el bloqueo debe comprobarse desde otro equipo Windows con las pruebas de PowerShell de la práctica.
 
@@ -237,21 +361,27 @@ D3 y D4 evalúan las **políticas**, no conexiones reales. Si no hay registros `
 | Indicador | Puntos | Qué comprueba |
 |-----------|-------:|---------------|
 | E1 | 3 | `openssh-server` instalado, servicio `ssh` activo y puerto 22 escuchando. |
-| E2 | 3 | `IP_SERVIDOR` asignada; `profe1` tiene shell interactivo y está permitido por `AllowUsers`/`AllowGroups` sin `DenyUsers`/`DenyGroups`. |
-| E3 | 3 | Autenticación por llave habilitada; `~profe1/.ssh/authorized_keys` existe, contiene una llave válida y tiene permisos seguros. |
+| E2 | 3 | `IP_SERVIDOR` asignada; el usuario evaluado tiene shell interactivo y está permitido por `AllowUsers`/`AllowGroups` sin `DenyUsers`/`DenyGroups`. |
+| E3 | 3 | Autenticación por llave habilitada; `~usuario/.ssh/authorized_keys` existe, contiene una llave válida y tiene permisos seguros. |
 | E4 | 3 | `PermitRootLogin no`, `PasswordAuthentication no`, `PubkeyAuthentication yes` y `MaxAuthTries` ≤ 3. |
-| E5 | 3 | `sshd -t` sin errores y registros SSH consultables. |
+| E5 | 3 | `sshd -t` sin errores y un inicio de sesión aceptado del usuario evaluado en los últimos 10 minutos. |
 
-La configuración efectiva se obtiene con `sshd -T`. Si `sshd` está en otra ruta, se puede indicar con `SSHD=/ruta/sshd`.
+El **usuario evaluado** es, por orden, `USUARIO_SSH`, el que lanzó `sudo` o `profe1`. Así `AllowUsers leonel` de la práctica no resta puntos:
+
+```bash
+sudo USUARIO_SSH=profe1 bash evaluar-apartado-e.sh 192.168.1.50 192.168.1.60
+```
+
+La configuración efectiva se obtiene con `sshd -T`.
 
 #### F. Acceso remoto gráfico VNC (12 puntos)
 
 | Indicador | Puntos | Qué comprueba |
 |-----------|-------:|---------------|
 | F1 | 2 | TigerVNC o TightVNC instalado y existe `~profe1/.vnc`. |
-| F2 | 3 | `vncserver -list` de `profe1` muestra una sesión activa en `:1`. |
+| F2 | 3 | `vncserver -list` de `profe1` (sesión de login) muestra la pantalla 1 en el puerto 5901. |
 | F3 | 3 | **Manual**: conexión desde el visor VNC en Windows. |
-| F4 | 4 | UFW activo, entrada `deny` por defecto, 5901/tcp permitido **solo** desde `IP_CLIENTE` y sin reglas generales de entrada. |
+| F4 | 4 | UFW activo, entrada `deny` por defecto, 5901/tcp permitido solo desde `IP_CLIENTE` (o una red que lo contenga) y sin reglas generales de entrada. |
 
 Antes de ejecutarlo, la sesión VNC de `profe1` debe estar iniciada.
 
@@ -261,17 +391,15 @@ Antes de ejecutarlo, la sesión VNC de `profe1` debe estar iniciada.
 |-----------|-------:|---------------|
 | G1 | 2 | Se pueden consultar nombre del equipo, usuario, fecha e IPs; `IP_SERVIDOR` asignada y `profe1` existe. |
 | G2 | 3 | En los registros de **los últimos 15 minutos** hay un inicio de sesión SSH aceptado de `profe1` desde `IP_CLIENTE`. |
-| G3 | 3 | Existe `~profe1/evidencia_remota.txt`, propiedad de `profe1`, con el texto `Archivo creado remotamente`. |
+| G3 | 3 | Existe `evidencia-vnc.txt` en el Escritorio de `profe1`, propiedad de `profe1`, con el texto `Acceso remoto por VNC`. |
 
-Pasos previos desde el cliente (como máximo 15 minutos antes de evaluar):
+Pasos previos (sección 4.4 de la [práctica de usuarios](practicas-tema-2/practica_usuarios_tema3.md)): conectarse por SSH como `profe1` desde el cliente (como máximo 15 minutos antes de evaluar) y, desde el escritorio remoto VNC, crear:
 
 ```bash
-ssh profe1@192.168.1.50
-echo "Archivo creado remotamente" > ~/evidencia_remota.txt
-exit
+echo "Acceso remoto por VNC - $(date)" > ~/Escritorio/evidencia-vnc.txt
 ```
 
-Si `profe1` ejecuta el script con `sudo` dentro de esa sesión SSH, el propio script crea el archivo como `profe1`.
+También se acepta `~/Desktop/evidencia-vnc.txt` o, como alternativa, `~/evidencia_remota.txt` con la línea `Archivo creado remotamente`.
 
 #### H. Administración de impresoras (14 puntos)
 
@@ -283,15 +411,12 @@ Si `profe1` ejecuta el script con `sudo` dentro de esa sesión SSH, el propio sc
 | H4 | 3 | Se consultan colas y trabajos, y se crea y cancela un trabajo de prueba. |
 | H5 | 2 | **Manual**: impresión desde Windows. |
 
-> ⚠️ **Nombres de las colas e IP de la impresora.** El script espera las colas `Impresora_USB` e `Impresora_Red` (líneas 36–37) y usa por defecto la IP `192.168.1.50`, que en el escenario es la del servidor. La [práctica de impresoras](practicas-tema-2/impresora.md) usa las colas `USB_Lab` y `Red_Lab` y la impresora en `192.168.1.80`. Antes de evaluar:
->
-> - Indica la IP real con la variable `IP_IMPRESORA`:
->
->   ```bash
->   sudo IP_IMPRESORA=192.168.1.80 bash evaluar-apartado-h.sh 192.168.1.50 192.168.1.60
->   ```
->
-> - Cambia `IMPRESORA_USB` e `IMPRESORA_RED` en el script por los nombres de tus colas, o crea las colas con los nombres que espera el script.
+Por defecto usa los nombres de la [práctica de impresoras](practicas-tema-2/impresora.md): colas `USB_Lab` y `Red_Lab`, impresora de red en `192.168.1.80`. Se pueden cambiar sin editar el script:
+
+```bash
+sudo IMPRESORA_USB=Otra_USB IMPRESORA_RED=Otra_Red IP_IMPRESORA=192.168.1.90 \
+  bash evaluar-apartado-h.sh 192.168.1.50 192.168.1.60
+```
 
 El script envía **trabajos de impresión reales** a ambas impresoras.
 
